@@ -23,6 +23,11 @@ GitHub 仓库: [https://github.com/visooncs/plover_photos](https://github.com/vi
 - **⚡ 后台任务**: 内置强大的异步任务管理系统，支持实时查看扫描和分析进度。
 - **🐳 Docker 部署**: 提供完整的一键 Docker 部署方案，包含 PostgreSQL 向量数据库。
 
+<img width="2094" height="1220" alt="image" src="https://github.com/user-attachments/assets/a201dfc3-50ae-4985-92c7-8a05df2f4ac9" />
+<img width="2094" height="1220" alt="image" src="https://github.com/user-attachments/assets/57cfceca-304a-4bfd-85da-be2e28e33d5a" />
+<img width="2094" height="1220" alt="image" src="https://github.com/user-attachments/assets/0c8ea8fa-d9e8-4cf4-b27b-60edc1d83627" />
+
+
 ## 🛠️ 技术栈
 
 - **后端**: Django 5 + Python 3.12 + Django REST Framework
