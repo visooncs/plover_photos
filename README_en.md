@@ -23,6 +23,11 @@ GitHub Repository: [https://github.com/visooncs/plover_photos](https://github.co
 - **⚡ Background Tasks**: Built-in powerful asynchronous task management system, supporting real-time viewing of scan and analysis progress.
 - **🐳 Docker Deployment**: Provides a complete one-click Docker deployment solution, including PostgreSQL vector database.
 
+
+<img width="2094" height="1220" alt="image" src="https://github.com/user-attachments/assets/a201dfc3-50ae-4985-92c7-8a05df2f4ac9" />
+<img width="2094" height="1220" alt="image" src="https://github.com/user-attachments/assets/57cfceca-304a-4bfd-85da-be2e28e33d5a" />
+<img width="2094" height="1220" alt="image" src="https://github.com/user-attachments/assets/0c8ea8fa-d9e8-4cf4-b27b-60edc1d83627" />
+
 ## 🛠️ Tech Stack
 
 - **Backend**: Django 5 + Python 3.12 + Django REST Framework
