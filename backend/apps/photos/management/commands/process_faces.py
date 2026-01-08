@@ -6,6 +6,7 @@ import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 import time
+import os
 
 class Command(BaseCommand):
     help = '一键完成人脸识别与聚类 (包括扫描、特征提取、自动归类和合并)'
