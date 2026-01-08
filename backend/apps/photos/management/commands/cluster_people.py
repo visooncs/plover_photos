@@ -8,13 +8,14 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--task-id', type=str, help='系统维护任务 ID')
         parser.add_argument('--threshold', type=float, default=0.2, help='相似度阈值 (0-1)，越小越严格')
-        parser.add_argument('--auto-merge', action='store_true', help='是否自动合并极高相似度的人物')
-        parser.add_argument('--merge-all', action='store_true', help='强制合并所有发现的建议（慎用）')
+        parser.add_argument('--dry-run', action='store_true', help='仅显示合并建议，不执行合并')
+        # 保留旧参数以兼容现有调用，但逻辑上默认都会合并
+        parser.add_argument('--auto-merge', action='store_true', help='(已废弃，默认自动合并) 是否自动合并极高相似度的人物')
+        parser.add_argument('--merge-all', action='store_true', help='(已废弃，默认自动合并) 强制合并所有发现的建议')
 
     def handle(self, *args, **options):
         threshold = options['threshold']
-        auto_merge = options['auto_merge']
-        merge_all = options['merge_all']
+        dry_run = options['dry_run']
         task_id = options.get('task_id')
         
         from apps.photos.models import MaintenanceTask
@@ -80,28 +81,19 @@ class Command(BaseCommand):
             self.stdout.write(f'  - {p1.name} 与 {p2.name} (相似度: {conf}%)')
             
             # 自动合并逻辑：
-            # 1. 如果开启了 --merge-all，全部合并
-            # 2. 如果开启了 --auto-merge：
-            #    - 相似度 > 95% 总是合并
-            #    - 如果其中一个是“未命名”的，且相似度 > 85%，也进行合并
-            should_merge = False
-            if merge_all:
-                should_merge = True
-            elif auto_merge:
-                if conf > 95:
-                    should_merge = True
-                elif is_unnamed and conf > 85:
-                    should_merge = True
-            
-            if should_merge:
-                self.stdout.write(self.style.WARNING(f'    [执行合并] {p1.name} -> {p2.name}'))
-                try:
-                    # 将 p1 合并到 p2 (保持 p2)
-                    p1.merge_with(p2)
-                    merged_ids.add(p1.id) # p1 被删除了
-                    merge_count += 1
-                except Exception as e:
-                    self.stdout.write(self.style.ERROR(f'    合并失败: {e}'))
+            # 默认合并所有发现的建议，除非指定了 --dry-run
+            if dry_run:
+                self.stdout.write(f'    [预览合并] {p1.name} -> {p2.name} (未执行)')
+                continue
+
+            self.stdout.write(self.style.WARNING(f'    [执行合并] {p1.name} -> {p2.name}'))
+            try:
+                # 将 p1 合并到 p2 (保持 p2)
+                p1.merge_with(p2)
+                merged_ids.add(p1.id) # p1 被删除了
+                merge_count += 1
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f'    合并失败: {e}'))
         
         if merge_count > 0:
             # 清理缓存

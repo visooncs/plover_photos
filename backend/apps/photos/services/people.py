@@ -138,6 +138,39 @@ class PersonService:
         return sorted(similar_people, key=lambda x: x['distance'])
 
     @staticmethod
+    def get_person_diverse_embeddings(person, max_clusters=5):
+        """
+        获取人物的多样化特征向量列表
+        如果照片较少，返回 [平均向量]
+        如果照片较多，使用 KMeans 聚类提取 max_clusters 个代表性向量（如正脸、侧脸等）
+        """
+        faces = person.faces.exclude(embedding__isnull=True)
+        count = faces.count()
+        
+        if count == 0:
+            return []
+        
+        embeddings = [np.array(f.embedding) for f in faces]
+        
+        # 样本少时，直接用平均值
+        if count < 10:
+            return [np.mean(embeddings, axis=0)]
+            
+        # 样本多时，聚类出几个中心
+        # 聚类数量：每 20 张照片增加一个簇，最多 max_clusters 个
+        n_clusters = min(max_clusters, max(1, count // 20))
+        # 确保 n_clusters 不超过样本数（虽然 count >= 10 肯定满足，但安全起见）
+        n_clusters = min(n_clusters, count)
+        
+        try:
+            from sklearn.cluster import KMeans
+            kmeans = KMeans(n_clusters=n_clusters, n_init=5, random_state=42).fit(embeddings)
+            return list(kmeans.cluster_centers_)
+        except Exception as e:
+            print(f"KMeans failed for person {person.id}: {e}, falling back to mean.")
+            return [np.mean(embeddings, axis=0)]
+
+    @staticmethod
     def get_person_representative_embedding(person):
         """获取人物的代表性特征向量（目前取平均值）"""
         faces = person.faces.exclude(embedding__isnull=True)
@@ -153,13 +186,13 @@ class PersonService:
         return 1 - np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
 
     @staticmethod
-    def auto_cluster_unlabeled_faces(threshold=0.15, min_samples=3):
+    def auto_cluster_unlabeled_faces(threshold=0.3, min_samples=2):
         """
         使用快速聚类算法处理大量未标记人脸
         1. 尝试匹配已有人物
         2. 对剩余人脸进行 DBSCAN 聚类
         """
-        from sklearn.cluster import DBSCAN
+        from sklearn.cluster import DBSCAN, KMeans
         import numpy as np
         from django.db import transaction
         from django.db import connections
@@ -178,37 +211,53 @@ class PersonService:
         
         # --- 第一阶段：尝试匹配已有人物 ---
         people = Person.objects.all()
-        # 预先计算所有人物的代表向量
+        # 预先计算所有人物的代表向量（对于照片多的人物，使用多中心特征）
         people_vecs = []
         for p in people:
-            v = PersonService.get_person_representative_embedding(p)
-            if v is not None:
-                people_vecs.append((p, v))
+            # 使用多中心特征提取，能更好地覆盖人物的不同角度（正脸、侧脸等）
+            vecs = PersonService.get_person_diverse_embeddings(p)
+            if vecs:
+                people_vecs.append((p, vecs))
         
         remaining_faces = []
         if people_vecs:
-            print(f"正在尝试匹配 {len(people_vecs)} 个已有人物...")
+            print(f"正在尝试匹配 {len(people_vecs)} 个已有人物（使用多中心特征）...")
             for face in unlabeled_faces:
                 best_match = None
-                min_dist = threshold
+                # 匹配已有人物时可以使用稍微宽松一点的阈值
+                current_threshold = threshold 
+                min_dist = current_threshold
                 
                 face_vec = np.array(face.embedding)
-                for person, p_vec in people_vecs:
-                    # 使用矩阵运算加速对比
-                    dist = PersonService.cosine_distance(face_vec, p_vec)
+                for person, p_vecs in people_vecs:
+                    # 计算到该人物所有中心的最小距离
+                    # p_vecs 是一个列表 [v1, v2, ...]
+                    dists = [PersonService.cosine_distance(face_vec, pv) for pv in p_vecs]
+                    dist = min(dists)
+                    
                     if dist < min_dist:
                         min_dist = dist
                         best_match = person
                 
                 if best_match:
-                    face.person = best_match
-                    face.save()
-                    best_match.photos.add(face.photo_id)
-                    # 确保人物有头像
-                    if not best_match.avatar:
-                        best_match.avatar = face.photo
-                        best_match.save(update_fields=['avatar'])
-                    labeled_count += 1
+                    try:
+                        with transaction.atomic():
+                            # 再次确认人物是否存在，防止竞态条件
+                            if not Person.objects.filter(id=best_match.id).exists():
+                                remaining_faces.append(face)
+                                continue
+                                
+                            face.person = best_match
+                            face.save()
+                            best_match.photos.add(face.photo_id)
+                            # 确保人物有头像
+                            if not best_match.avatar:
+                                best_match.avatar = face.photo
+                                best_match.save(update_fields=['avatar'])
+                            labeled_count += 1
+                    except Exception as e:
+                        print(f"Error labeling face {face.id} to person {best_match.id}: {e}")
+                        remaining_faces.append(face)
                 else:
                     remaining_faces.append(face)
         else:
@@ -239,6 +288,14 @@ class PersonService:
         print(f"聚类完成，发现 {len(unique_labels) - (1 if -1 in unique_labels else 0)} 个潜在新人物群组")
         
         # 处理每个簇
+        def get_next_person_name():
+            nonlocal current_person_count
+            while True:
+                current_person_count += 1
+                name = f"人物_{current_person_count}"
+                if not Person.objects.filter(name=name).exists():
+                    return name
+
         current_person_count = Person.objects.count()
         for label in unique_labels:
             if label == -1: # 噪声点
@@ -251,9 +308,8 @@ class PersonService:
             # 为该簇创建一个新人物
             with transaction.atomic():
                 new_person = Person.objects.create(
-                    name=f"人物_{current_person_count + 1}"
+                    name=get_next_person_name()
                 )
-                current_person_count += 1
                 
                 # 批量更新关联
                 face_ids = [f.id for f in cluster_faces]
@@ -269,6 +325,25 @@ class PersonService:
                     new_person.save()
                 
                 labeled_count += len(cluster_faces)
+        
+        # --- 第三阶段：处理无法成簇的孤立人脸 ---
+        # 为每个孤立的人脸也创建一个“未命名”人物，以便用户可以手动命名和合并
+        noise_indices = np.where(labels == -1)[0]
+        if len(noise_indices) > 0:
+            print(f"处理 {len(noise_indices)} 个孤立人脸...")
+            for idx in noise_indices:
+                face = remaining_faces[idx]
+                with transaction.atomic():
+                    new_person = Person.objects.create(
+                        name=get_next_person_name()
+                    )
+                    
+                    face.person = new_person
+                    face.save()
+                    new_person.photos.add(face.photo_id)
+                    new_person.avatar_id = face.photo_id
+                    new_person.save()
+                    labeled_count += 1
         
         # 任务结束后清理连接
         connections.close_all()

@@ -1,7 +1,9 @@
 from django.shortcuts import get_object_or_404
 from django.http import FileResponse, Http404, HttpResponse
 from django.core.cache import cache
+from django.conf import settings
 from PIL import Image, ImageOps
+from pathlib import Path
 import io
 import os
 import cv2
@@ -22,18 +24,91 @@ def face_crop_serve(request, pk):
     face = get_object_or_404(Face, pk=pk)
     photo = face.photo
     
-    # 尝试从缓存读取
+    # 1. 内存缓存检查 (一级缓存)
     cache_key = f"face_crop_v2_{pk}_{size_int}"
     cached_face = cache.get(cache_key)
     if cached_face:
         return HttpResponse(cached_face, content_type="image/jpeg")
+
+    # 2. 文件缓存检查 (二级缓存)
+    cache_dir = Path(settings.MEDIA_ROOT) / 'cache' / 'face_crops'
+    cache_file = cache_dir / f"{pk}_{size_int}.jpg"
+    
+    if cache_file.exists():
+        try:
+            with open(cache_file, 'rb') as f:
+                img_data = f.read()
+                # 回填内存缓存 (1天)
+                cache.set(cache_key, img_data, 86400)
+                return HttpResponse(img_data, content_type="image/jpeg")
+        except Exception as e:
+            print(f"Error reading face crop cache file {cache_file}: {e}")
+            # 如果读取失败，继续下面的生成逻辑
         
-    real_path = resolve_docker_path(photo.file_path)
-    if not os.path.exists(real_path):
-        raise Http404("Original photo not found")
+    # 3. 确定用于截帧的物理路径
+    # 如果是动态照片或视频，我们需要确定视频流所在的路径
+    video_source_path = None
+    if photo.video_path:
+        video_source_path = resolve_docker_path(photo.video_path)
+    
+    # 如果没有独立视频路径，但又是视频/动态照片，则可能内嵌在主文件中
+    if not video_source_path and photo.is_video:
+        video_source_path = resolve_docker_path(photo.file_path)
         
     try:
-        with Image.open(real_path) as img:
+        if photo.is_video and face.timestamp is not None:
+            # 只有带时间戳的面孔才需要从视频中提取
+            from ..services.video import extract_video_frame
+            
+            # 检查视频源文件是否存在
+            if not video_source_path or not os.path.exists(video_source_path):
+                print(f"Face crop error: Video source not found at {video_source_path} for face {pk}")
+                raise Http404("Video source not found")
+
+            # 针对动态照片的内嵌视频处理
+            temp_video_path = None
+            try:
+                # 如果是图片文件但被标记为视频（动态照片），尝试提取内嵌视频
+                ext = os.path.splitext(video_source_path)[1].lower()
+                if ext in ['.jpg', '.jpeg', '.heic']:
+                    from ..services.motion_photo import MotionPhotoService
+                    # 提取到缓存目录作为临时文件
+                    temp_dir = Path(settings.MEDIA_ROOT) / 'temp'
+                    temp_dir.mkdir(parents=True, exist_ok=True)
+                    temp_video_path = temp_dir / f"temp_video_{pk}.mp4"
+                    
+                    if MotionPhotoService.extract_video(video_source_path, str(temp_video_path)):
+                        img = extract_video_frame(str(temp_video_path), timestamp=face.timestamp)
+                    else:
+                        # 提取失败，尝试直接作为图片打开（万一时间戳是 0 且主图就能看）
+                        img = Image.open(video_source_path)
+                else:
+                    # 普通视频文件
+                    img = extract_video_frame(video_source_path, timestamp=face.timestamp)
+            finally:
+                # 清理临时文件
+                if temp_video_path and temp_video_path.exists():
+                    try:
+                        temp_video_path.unlink()
+                    except:
+                        pass
+                        
+            if img is None:
+                print(f"Face crop error: Could not extract frame from {video_source_path} at timestamp {face.timestamp}")
+                raise Http404("Could not extract frame from video")
+        else:
+            # 普通图片或不带时间戳的人脸 (优先从主图提取)
+            real_path = resolve_docker_path(photo.file_path)
+            if not os.path.exists(real_path):
+                print(f"Face crop error: Original photo not found at {real_path}")
+                raise Http404("Original photo not found")
+            try:
+                img = Image.open(real_path)
+            except Exception as e:
+                print(f"Face crop error: Pillow cannot open {real_path}: {e}")
+                raise Http404("Invalid image file")
+            
+        with img:
             img = ImageOps.exif_transpose(img)
             # bbox: [x1, y1, x2, y2]
             x1, y1, x2, y2 = face.bbox
@@ -88,12 +163,25 @@ def face_crop_serve(request, pk):
             crop.save(buf, format="JPEG", quality=90)
             img_data = buf.getvalue()
             
-            # 缓存 1 天
+            # 3. 写入文件缓存
+            try:
+                if not cache_dir.exists():
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                with open(cache_file, 'wb') as f:
+                    f.write(img_data)
+            except Exception as e:
+                print(f"Error saving face crop cache file {cache_file}: {e}")
+            
+            # 4. 写入内存缓存 (1天)
             cache.set(cache_key, img_data, 86400)
             
             return HttpResponse(img_data, content_type="image/jpeg")
+    except Http404:
+        raise
     except Exception as e:
-        print(f"Face crop error: {e}")
+        import traceback
+        print(f"Face crop unexpected error for face {pk}: {e}")
+        traceback.print_exc()
         raise Http404("Error generating face crop")
 
 def photo_serve(request, pk):

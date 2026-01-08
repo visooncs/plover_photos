@@ -2,8 +2,10 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Sum
+from django.core.management import call_command
 import shutil
 import os
+import threading
 from ..models import Photo, Library
 
 class SystemViewSet(viewsets.ViewSet):
@@ -31,3 +33,17 @@ class SystemViewSet(viewsets.ViewSet):
             })
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def run_clustering(self, request):
+        """手动触发人脸聚类"""
+        def _run():
+            try:
+                # 调用现有的 management command 进行聚类
+                call_command('cluster_people')
+            except Exception as e:
+                print(f"Clustering error: {e}")
+
+        thread = threading.Thread(target=_run)
+        thread.start()
+        return Response({'status': 'Clustering started in background'})

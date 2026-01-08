@@ -127,6 +127,35 @@ export const usePersonStore = defineStore('person', () => {
     }
   }
 
+  async function deletePerson(id) {
+    try {
+      const response = await fetch(`/api/people/${id}/`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        throw new Error('Failed to delete person')
+      }
+      return true
+    } catch (e) {
+      throw e
+    }
+  }
+
+  async function resetPerson(id) {
+    try {
+      const response = await fetch(`/api/people/${id}/reset/`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Failed to reset person')
+      }
+      return await response.json()
+    } catch (e) {
+      throw e
+    }
+  }
+
   return {
     people,
     currentPerson,
@@ -139,6 +168,9 @@ export const usePersonStore = defineStore('person', () => {
     clearCurrentPerson,
     updatePersonName,
     setCover,
-    removePhoto
+    removePhoto,
+    resetPerson,
+    deletePerson
   }
 })
+

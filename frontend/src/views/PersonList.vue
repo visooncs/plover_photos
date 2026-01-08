@@ -2,13 +2,31 @@
 import { onMounted, ref, computed, nextTick } from 'vue'
 import { usePersonStore } from '../stores/person'
 import { useRouter } from 'vue-router'
-import { User, CheckCircle, Circle, Merge, Eye, EyeOff, Star, Pencil } from 'lucide-vue-next'
+import { User, CheckCircle, Circle, Merge, Eye, EyeOff, Star, Pencil, RefreshCw } from 'lucide-vue-next'
 import { useIntersectionObserver, useWindowSize } from '@vueuse/core'
+import axios from 'axios'
 
 const personStore = usePersonStore()
 const router = useRouter()
 const loadMoreTrigger = ref(null)
 const showHidden = ref(false)
+const isClustering = ref(false)
+
+const handleRunClustering = async () => {
+    if (isClustering.value) return
+    isClustering.value = true
+    try {
+        await axios.post('/api/system/run_clustering/')
+        // 给用户一个提示，并在几秒后刷新列表
+        setTimeout(() => {
+            personStore.fetchPeople()
+            isClustering.value = false
+        }, 3000)
+    } catch (error) {
+        console.error('Failed to run clustering:', error)
+        isClustering.value = false
+    }
+}
 
 const { width } = useWindowSize()
 
@@ -214,6 +232,15 @@ const confirmMerge = async () => {
             >
                 <Merge :size="16" />
                 合并 ({{ selectedPersonIds.size }})
+            </button>
+            <button 
+                @click="handleRunClustering"
+                class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+                :disabled="isClustering"
+                title="重新扫描未命名人脸并尝试聚类"
+            >
+                <RefreshCw :size="16" :class="{'animate-spin': isClustering}" />
+                {{ isClustering ? '聚类中...' : '重新聚类' }}
             </button>
             <button 
                 @click="toggleSelectionMode"

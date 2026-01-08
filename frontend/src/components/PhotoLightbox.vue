@@ -230,6 +230,14 @@ const formatDateTime = (dateStr) => {
     }
 }
 
+const formatPersonName = (name) => {
+    if (!name) return '未知'
+    if (name.startsWith('人物_')) {
+        return name.replace('人物_', '未命名人物 ')
+    }
+    return name
+}
+
 const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 B'
     const k = 1024
@@ -428,7 +436,7 @@ onUnmounted(() => {
                                     class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
                                     :class="{'cursor-default': !face.person, 'cursor-pointer hover:text-blue-600': face.person}"
                                 >
-                                    {{ face.person_name || '未知' }} 
+                                    {{ formatPersonName(face.person_name) }} 
                                     <span v-if="face.count > 1" class="ml-1 px-1 bg-gray-200 rounded-full text-[10px]">{{ face.count }}</span>
                                     <span v-else>({{ Math.round(face.prob * 100) }}%)</span>
                                 </span>

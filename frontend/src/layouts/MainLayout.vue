@@ -28,7 +28,7 @@
     <div class="flex-1 flex flex-col min-w-0">
       <TopBar @toggle-menu="isMobileMenuOpen = !isMobileMenuOpen" />
       <main class="flex-1 overflow-y-auto bg-white scroll-smooth flex flex-col">
-        <div class="max-w-[1600px] mx-auto w-full flex-1 flex flex-col">
+        <div class="w-full flex-1 flex flex-col p-4 md:p-6 lg:p-8">
           <slot></slot>
         </div>
       </main>

@@ -5,15 +5,48 @@ import { usePersonStore } from '../stores/person'
 import { usePhotoStore } from '../stores/photo'
 import PhotoGrid from '../components/PhotoGrid.vue'
 import PhotoLightbox from '../components/PhotoLightbox.vue'
-import { ArrowLeft, Edit2, ScanSearch } from 'lucide-vue-next'
+import { ArrowLeft, Edit2, ScanSearch, RotateCcw, Trash2 } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 
 const route = useRoute()
+const router = useRouter()
 const personStore = usePersonStore()
 const photoStore = usePhotoStore()
 
 const isEditing = ref(false)
 const editedName = ref('')
 const nameInput = ref(null)
+
+const handleReset = async () => {
+    if (!personStore.currentPerson) return
+    
+    if (!window.confirm(`确定要重置人物 "${personStore.currentPerson.name}" 吗？\n\n此操作将删除该人物实体，并释放其关联的所有人脸（变为未标记状态）。\n这些照片随后可以被重新聚类分析。\n\n这对于解决合并错误非常有用。`)) {
+        return
+    }
+    
+    try {
+        await personStore.resetPerson(personStore.currentPerson.id)
+        alert('人物已重置。请前往“系统维护”重新运行人脸聚类以生成新的人物。')
+        router.push('/people')
+    } catch (e) {
+        alert('重置失败: ' + e.message)
+    }
+}
+
+const handleDelete = async () => {
+    if (!personStore.currentPerson) return
+    
+    if (!window.confirm(`确定要删除人物 "${personStore.currentPerson.name}" 吗？\n\n该人物关联的所有人脸将被设为未标记。`)) {
+        return
+    }
+    
+    try {
+        await personStore.deletePerson(personStore.currentPerson.id)
+        router.push('/people')
+    } catch (e) {
+        alert('删除失败: ' + e.message)
+    }
+}
 
 const startEditing = () => {
     if (personStore.currentPerson) {
@@ -118,6 +151,22 @@ onUnmounted(() => {
             >
                 <ScanSearch :size="24" />
             </router-link>
+
+            <button 
+                @click="handleReset"
+                class="ml-2 p-2 text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-full transition-colors" 
+                title="重置人物 (释放人脸并删除实体)"
+            >
+                <RotateCcw :size="24" />
+            </button>
+
+            <button 
+                @click="handleDelete"
+                class="ml-2 p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" 
+                title="删除人物"
+            >
+                <Trash2 :size="24" />
+            </button>
         </div>
         <div v-else-if="personStore.loading" class="h-10 w-48 bg-gray-200 animate-pulse rounded"></div>
     </div>

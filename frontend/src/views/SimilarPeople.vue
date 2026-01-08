@@ -142,7 +142,7 @@ const selectAll = () => {
       </div>
 
       <!-- Content -->
-      <div class="p-4 sm:p-8">
+      <div class="flex-1 flex flex-col min-h-0">
           <div v-if="loading" class="flex justify-center py-12">
               <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
@@ -155,7 +155,7 @@ const selectAll = () => {
               <p class="text-sm mt-2">尝试调高相似度阈值 (向右拖动滑块)</p>
           </div>
 
-          <div v-else>
+          <div v-else class="flex-1 flex flex-col p-4 sm:p-6 lg:p-8">
               <div class="mb-4 flex items-center justify-between">
                   <span class="text-sm text-gray-500">找到 {{ similarPeople.length }} 个相似人物</span>
                   <button @click="selectAll" class="text-sm text-blue-600 hover:text-blue-700 font-medium">
@@ -163,11 +163,11 @@ const selectAll = () => {
                   </button>
               </div>
 
-              <div class="grid gap-4" :style="{ gridTemplateColumns: `repeat(${currentCols}, minmax(0, 1fr))` }">
+              <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-3 md:gap-4">
                   <div 
                     v-for="person in similarPeople" 
                     :key="person.id"
-                    class="group relative aspect-square bg-gray-100 rounded-xl overflow-hidden cursor-pointer border-2 transition-all duration-200"
+                    class="group relative aspect-square bg-gray-100 rounded-xl overflow-hidden cursor-pointer border-2 transition-all duration-200 shadow-sm"
                     :class="selectedPersonIds.has(person.id) ? 'border-blue-500 ring-2 ring-blue-200' : 'border-transparent hover:border-gray-300'"
                     @click="toggleSelection(person.id)"
                   >
@@ -178,24 +178,24 @@ const selectAll = () => {
                         loading="lazy"
                       />
                       <div v-else class="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">
-                          <User :size="32" />
+                          <User :size="24" />
                       </div>
 
                       <!-- Selection Indicator -->
-                      <div class="absolute top-2 right-2 z-10">
-                         <div class="bg-white rounded-full p-0.5 shadow-sm">
-                             <CheckCircle v-if="selectedPersonIds.has(person.id)" class="text-blue-600 fill-white" :size="24" />
-                             <Circle v-else class="text-gray-300 bg-white/50 rounded-full" :size="24" />
+                      <div class="absolute top-1.5 right-1.5 z-10">
+                         <div class="bg-white/80 backdrop-blur-sm rounded-full p-0.5 shadow-sm">
+                             <CheckCircle v-if="selectedPersonIds.has(person.id)" class="text-blue-600 fill-white" :size="20" />
+                             <Circle v-else class="text-gray-300" :size="20" />
                          </div>
                       </div>
 
                       <!-- Info Overlay -->
-                      <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 pt-8">
-                          <p class="text-white font-medium text-sm truncate">{{ person.name }}</p>
-                          <div class="flex items-center justify-between mt-1">
-                              <span class="text-xs text-gray-300">{{ person.photo_count }} 张照片</span>
+                      <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-2 pt-6">
+                          <p class="text-white font-medium text-[11px] sm:text-xs truncate leading-tight">{{ person.name }}</p>
+                          <div class="flex items-center justify-between mt-0.5 gap-1">
+                              <span class="text-[9px] sm:text-[10px] text-gray-300 truncate">{{ person.photo_count }}张</span>
                               <span 
-                                class="text-[10px] font-bold px-1.5 py-0.5 rounded text-white"
+                                class="text-[8px] sm:text-[9px] font-bold px-1 py-0.5 rounded text-white flex-shrink-0"
                                 :class="person.distance < 0.3 ? 'bg-green-500/80' : (person.distance < 0.5 ? 'bg-yellow-500/80' : 'bg-red-500/80')"
                               >
                                   Sim: {{ (1 - person.distance).toFixed(2) }}

@@ -148,6 +148,41 @@ class PersonViewSet(viewsets.ModelViewSet):
         except Photo.DoesNotExist:
             return Response({'error': 'Photo not found'}, status=status.HTTP_404_NOT_FOUND)
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        删除人物：释放关联的所有人脸（变为未标记），并删除该人物实体。
+        """
+        person = self.get_object()
+        # 释放所有关联的人脸
+        person.faces.all().update(person=None)
+        # 正常删除
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'])
+    def reset(self, request, pk=None):
+        """
+        重置人物：释放关联的所有人脸（变为未标记），并删除该人物实体。
+        这允许这些照片重新进入聚类流程。
+        """
+        person = self.get_object()
+        
+        # 1. 释放所有关联的人脸 (将 person 字段置为 NULL)
+        # 这样它们就会变成 "未标记人脸"，可以被下次聚类重新扫描
+        updated_count = person.faces.all().update(person=None)
+        
+        # 2. 删除人物实体
+        # 注意：由于 on_delete 通常是 SET_NULL 或 CASCADE，但我们已经手动处理了 faces。
+        # 对于 photos (ManyToMany)，删除 person 会自动移除关联表记录，不会删照片。
+        person_id = person.id
+        person_name = person.name
+        person.delete()
+        
+        return Response({
+            'status': 'reset', 
+            'message': f'人物 "{person_name}" 已重置，{updated_count} 张人脸已释放待重新聚类。',
+            'released_faces': updated_count
+        })
+
     @action(detail=True, methods=['get'])
     def similar(self, request, pk=None):
         """查找相似人物"""
