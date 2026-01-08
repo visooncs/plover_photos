@@ -1,0 +1,103 @@
+name: plover-photos
+
+services:
+  db:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/pgvector/pgvector:pg16
+    container_name: plover_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=plover_photos
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    restart: always
+    networks:
+      - plover_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    container_name: plover_backend
+    shm_size: '2gb'
+    volumes:
+      - ../backend:/app
+      - ../models:/app/models
+      - media_volume:/app/media
+      - static_volume:/app/static_root
+      # 挂载宿主机 D 盘到容器内的 /mnt/d
+      - C:/:/mnt/c
+      - D:/:/mnt/d
+    environment:
+      - POSTGRES_DB=plover_photos
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - DEBUG=False
+      - CONN_MAX_AGE=0
+      - SECRET_KEY=django-insecure-prod-key-change-me-in-production-please
+      - ALLOWED_HOSTS=backend,localhost,127.0.0.1
+      - HF_ENDPOINT=https://hf-mirror.com
+      - INSIGHTFACE_HOME=/app/models/insightface
+      - SENTENCE_TRANSFORMERS_HOME=/app/models/huggingface
+      - HF_HOME=/app/models/huggingface
+      - HF_ENDPOINT=https://hf-mirror.com
+      - TRANSFORMERS_OFFLINE=0
+      # 路径映射配置：格式为 "HostPath=>ContainerPath"，多个映射用分号分隔
+      - "DOCKER_PATH_MAPPINGS=D:\\=>/mnt/d;C:\\=>/mnt/c"
+    # 使用自定义 entrypoint 以启用多线程模式 (gthread)，解决 Windows 挂载文件读取慢导致的超时问题
+    entrypoint:
+      - sh
+      - -c
+      - |
+        python manage.py migrate
+        python manage.py collectstatic --noinput
+        exec gunicorn core.wsgi:application --bind 0.0.0.0:8000 --timeout 600 --graceful-timeout 600 --workers 2 --threads 4 --worker-class gthread
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "8200:8000"
+    restart: always
+    networks:
+      - plover_net
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/frontend.Dockerfile
+    container_name: plover_frontend
+    ports:
+      - "80:80"
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+      - media_volume:/app/media
+      - static_volume:/app/static_root
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - plover_net
+
+volumes:
+  postgres_data:
+  media_volume:
+  static_volume:
+
+networks:
+  plover_net:
