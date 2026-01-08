@@ -19,7 +19,10 @@ class PersonViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         show_hidden = self.request.query_params.get('show_hidden') == 'true'
         
-        if show_hidden:
+        # 允许 unhide 操作访问所有状态的人物，防止因过滤导致 404
+        if self.action == 'unhide':
+            queryset = Person.objects.all()
+        elif show_hidden:
             queryset = Person.objects.filter(is_hidden=True)
         else:
             queryset = Person.objects.filter(is_hidden=False)
